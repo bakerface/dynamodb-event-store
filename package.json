@@ -1,6 +1,6 @@
 {
   "name": "dynamodb-event-store",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "An event store implementation on top of Amazon DynamoDB",
   "author": "Chris Baker <mail.chris.baker@gmail.com>",
   "license": "MIT",

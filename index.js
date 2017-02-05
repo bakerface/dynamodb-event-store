@@ -26,16 +26,24 @@
 var AWS = require('aws-sdk');
 
 var EventStore = module.exports = function (options) {
-  this.commitTableName = options.commitTableName;
-  this.commitIndexName = options.commitIndexName;
-  this.counterTableName = options.counterTableName;
+  this.tableName = options.tableName;
+  this.indexName = options.indexName;
   this.database = new AWS.DynamoDB(options);
   this.now = options.now || Date.now;
 };
 
-EventStore.prototype.createCommitTable = function (done) {
+EventStore.AWS = AWS;
+
+EventStore.VersionConflictError = function () {
+  Error.call(this);
+  this.name = 'EventStoreVersionConflictError';
+  this.message = 'A commit already exists with the specified version';
+  Error.captureStackTrace(this, this.constructor);
+};
+
+EventStore.prototype.createTable = function () {
   var params = {
-    TableName: this.commitTableName,
+    TableName: this.tableName,
     AttributeDefinitions: [
       {
         AttributeName: 'aggregateId',
@@ -43,7 +51,7 @@ EventStore.prototype.createCommitTable = function (done) {
       },
       {
         AttributeName: 'commitId',
-        AttributeType: 'N'
+        AttributeType: 'S'
       },
       {
         AttributeName: 'active',
@@ -70,7 +78,7 @@ EventStore.prototype.createCommitTable = function (done) {
     },
     GlobalSecondaryIndexes: [
       {
-        IndexName: this.commitIndexName,
+        IndexName: this.indexName,
         KeySchema: [
           {
             AttributeName: 'active',
@@ -92,111 +100,65 @@ EventStore.prototype.createCommitTable = function (done) {
     ]
   };
 
-  this.database.createTable(params, done);
+  return this.database.createTable(params).promise();
 };
 
-EventStore.prototype.createCounterTable = function (done) {
+EventStore.prototype.deleteTable = function () {
   var params = {
-    TableName: this.counterTableName,
-    AttributeDefinitions: [
-      {
-        AttributeName: 'name',
-        AttributeType: 'S'
-      }
-    ],
-    KeySchema: [
-      {
-        AttributeName: 'name',
-        KeyType: 'HASH'
-      }
-    ],
-    ProvisionedThroughput: {
-      ReadCapacityUnits: 15,
-      WriteCapacityUnits: 15
-    }
+    TableName: this.tableName
   };
 
-  this.database.createTable(params, done);
+  return this.database.deleteTable(params).promise();
 };
 
-EventStore.prototype.deleteCommitTable = function (done) {
-  var params = {
-    TableName: this.commitTableName
-  };
-
-  this.database.deleteTable(params, done);
-};
-
-EventStore.prototype.deleteCounterTable = function (done) {
-  var params = {
-    TableName: this.counterTableName
-  };
-
-  this.database.deleteTable(params, done);
-};
-
-EventStore.prototype.append = function (commit, done) {
-  var eventStore = this;
+EventStore.prototype.append = function (commit) {
+  var now = this.now();
+  var date = new Date(now).toISOString().replace(/[^0-9]/g, '');
+  var commitId = date + ':' + commit.aggregateId;
 
   var params = {
-    TableName: this.counterTableName,
-    Key: {
-      name: { S: 'commits' }
+    TableName: this.tableName,
+    Item: {
+      commitId: { S: commitId },
+      committedAt: { N: now.toString() },
+      aggregateId: { S: commit.aggregateId },
+      version: { N: commit.version.toString() },
+      events: { S: JSON.stringify(commit.events) },
+      active: { S: 't' }
     },
-    UpdateExpression: 'add id :n',
-    ExpressionAttributeValues: {
-      ':n': { N: '1' }
-    },
-    ReturnValues: 'ALL_NEW'
+    ConditionExpression: 'attribute_not_exists(version)',
+    ReturnValues: 'NONE'
   };
 
-  this.database.updateItem(params, function (err, response) {
-    if (err) {
-      return done(err);
-    }
+  return this.database.putItem(params).promise()
+    .catch(function (err) {
+      if (err.name === 'ConditionalCheckFailedException') {
+        throw new EventStore.VersionConflictError();
+      }
 
-    params = {
-      TableName: eventStore.commitTableName,
-      Item: {
-        commitId: response.Attributes.id,
-        committedAt: { N: eventStore.now().toString() },
-        aggregateId: { S: commit.aggregateId },
-        version: { N: commit.version.toString() },
-        events: { S: JSON.stringify(commit.events) },
-        active: { S: 't' }
-      },
-      ConditionExpression: 'attribute_not_exists(version)',
-      ReturnValues: 'NONE'
-    };
-
-    eventStore.database.putItem(params, done);
-  });
+      throw err;
+    });
 };
 
-EventStore.prototype._query = function (params, done) {
-  this.database.query(params, function (err, response) {
-    if (err) {
-      return done(err);
-    }
-
-    var commits = response.Items
-      .map(function (item) {
-        return {
-          commitId: parseInt(item.commitId.N, 10),
-          committedAt: parseInt(item.committedAt.N, 10),
-          aggregateId: item.aggregateId.S,
-          version: parseInt(item.version.N, 10),
-          events: JSON.parse(item.events.S)
-        };
-      });
-
-    done(null, commits);
-  });
+EventStore.prototype._query = function (params) {
+  return this.database.query(params).promise()
+    .then(function (response) {
+      return response.Items
+        .map(function (item) {
+          return {
+            commitId: item.commitId.S,
+            committedAt: parseInt(item.committedAt.N, 10),
+            aggregateId: item.aggregateId.S,
+            version: parseInt(item.version.N, 10),
+            events: JSON.parse(item.events.S)
+          };
+        });
+    });
 };
 
-EventStore.prototype.query = function (options, done) {
+EventStore.prototype.query = function (options) {
   var params = {
-    TableName: this.commitTableName,
+    TableName: this.tableName,
     ConsistentRead: true,
     KeyConditionExpression: 'aggregateId = :a AND version >= :v',
     ExpressionAttributeValues: {
@@ -205,19 +167,21 @@ EventStore.prototype.query = function (options, done) {
     }
   };
 
-  this._query(params, done);
+  return this._query(params);
 };
 
-EventStore.prototype.scan = function (options, done) {
+EventStore.prototype.scan = function (options) {
+  var commitId = (options && options.commitId) || '0';
+
   var params = {
-    TableName: this.commitTableName,
-    IndexName: this.commitIndexName,
+    TableName: this.tableName,
+    IndexName: this.indexName,
     KeyConditionExpression: 'active = :a AND commitId >= :c',
     ExpressionAttributeValues: {
       ':a': { S: 't' },
-      ':c': { N: options.commitId.toString() }
+      ':c': { S: commitId }
     }
   };
 
-  this._query(params, done);
+  return this._query(params);
 };
