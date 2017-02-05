@@ -5,6 +5,14 @@
 [![climate](https://img.shields.io/codeclimate/github/bakerface/dynamodb-event-store.svg?flat-square)](https://codeclimate.com/github/bakerface/dynamodb-event-store)
 [![coverage](https://img.shields.io/codeclimate/coverage/github/bakerface/dynamodb-event-store.svg?flat-square)](https://codeclimate.com/github/bakerface/dynamodb-event-store)
 
+This package provides a simple event store implementation on top of Amazon
+DynamoDB. This is meant to be a general purpose package, and makes no
+assumptions about the structure or type of your events. Events are serialized to
+JSON when stored, and deserialized automatically when querying. Events that
+happen at the same time are grouped into a commit, providing an atomic append
+operation. This guarantees that either all events are made durable, or none of
+them are. For a few examples, view the samples below:
+
 ``` javascript
 var EventStore = require('dynamodb-event-store');
 
