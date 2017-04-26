@@ -114,26 +114,26 @@ describe('when the tables are created', function () {
 
       return Promise.resolve()
         .then(function () {
-          return eventStore.append(a);
+          return eventStore.append(a.aggregateId, a.version, a.events);
         })
         .then(function () {
-          return eventStore.append(b);
+          return eventStore.append(b.aggregateId, b.version, b.events);
         })
         .then(function () {
-          return eventStore.append(c);
+          return eventStore.append(c.aggregateId, c.version, c.events);
         })
         .then(function () {
-          return eventStore.append(d);
+          return eventStore.append(d.aggregateId, d.version, d.events);
         });
     });
 
-    it('can query the events for a single aggregate', function () {
+    it('can fetch the events for a single aggregate', function () {
       var options = {
         aggregateId: '00000000-0000-0000-0000-000000000000',
         version: 0
       };
 
-      return this.eventStore.query(options)
+      return this.eventStore.fetch(options.aggregateId, options.version)
         .then(function (commits) {
           assert.deepEqual(commits, [
             {
@@ -154,13 +154,13 @@ describe('when the tables are created', function () {
         });
     });
 
-    it('can query in chunks', function () {
+    it('can fetch in chunks', function () {
       var options = {
         aggregateId: '00000000-0000-0000-0000-000000000000',
         version: 1
       };
 
-      return this.eventStore.query(options)
+      return this.eventStore.fetch(options.aggregateId, options.version)
         .then(function (commits) {
           assert.deepEqual(commits, [
             {
@@ -211,11 +211,9 @@ describe('when the tables are created', function () {
     });
 
     it('can scan in chunks', function () {
-      var options = {
-        commitId: '19700101000000002:00000000-0000-0000-0000-000000000000'
-      };
+      var commitId = '19700101000000002:00000000-0000-0000-0000-000000000000';
 
-      return this.eventStore.scan(options)
+      return this.eventStore.scan(commitId)
         .then(function (commits) {
           assert.deepEqual(commits, [
             {
@@ -237,13 +235,13 @@ describe('when the tables are created', function () {
     });
 
     it('can handle version conflicts', function () {
-      var commit = {
+      var a = {
         aggregateId: '00000000-0000-0000-0000-000000000000',
         version: 0,
         events: [ 'seven' ]
       };
 
-      return this.eventStore.append(commit)
+      return this.eventStore.append(a.aggregateId, a.version, a.events)
         .then(function () {
           throw new Error('The promise should have been rejected');
         })
@@ -253,13 +251,13 @@ describe('when the tables are created', function () {
     });
 
     it('can handle append errors', function () {
-      var commit = {
+      var a = {
         aggregateId: '00000000-0000-0000-0000-000000000000',
         version: 'error',
         events: [ 'seven' ]
       };
 
-      return this.eventStore.append(commit)
+      return this.eventStore.append(a.aggregateId, a.version, a.events)
         .then(function () {
           throw new Error('The promise should have been rejected');
         })
