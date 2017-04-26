@@ -111,19 +111,19 @@ EventStore.prototype.deleteTable = function () {
   return this.database.deleteTable(params).promise();
 };
 
-EventStore.prototype.append = function (commit) {
+EventStore.prototype.append = function (aggregateId, version, events) {
   var now = this.now();
   var date = new Date(now).toISOString().replace(/[^0-9]/g, '');
-  var commitId = date + ':' + commit.aggregateId;
+  var commitId = date + ':' + aggregateId;
 
   var params = {
     TableName: this.tableName,
     Item: {
       commitId: { S: commitId },
       committedAt: { N: now.toString() },
-      aggregateId: { S: commit.aggregateId },
-      version: { N: commit.version.toString() },
-      events: { S: JSON.stringify(commit.events) },
+      aggregateId: { S: aggregateId },
+      version: { N: version.toString() },
+      events: { S: JSON.stringify(events) },
       active: { S: 't' }
     },
     ConditionExpression: 'attribute_not_exists(version)',
@@ -156,30 +156,28 @@ EventStore.prototype._query = function (params) {
     });
 };
 
-EventStore.prototype.query = function (options) {
+EventStore.prototype.fetch = function (aggregateId, version) {
   var params = {
     TableName: this.tableName,
     ConsistentRead: true,
     KeyConditionExpression: 'aggregateId = :a AND version >= :v',
     ExpressionAttributeValues: {
-      ':a': { S: options.aggregateId },
-      ':v': { N: options.version.toString() }
+      ':a': { S: aggregateId },
+      ':v': { N: version.toString() }
     }
   };
 
   return this._query(params);
 };
 
-EventStore.prototype.scan = function (options) {
-  var commitId = (options && options.commitId) || '0';
-
+EventStore.prototype.scan = function (commitId) {
   var params = {
     TableName: this.tableName,
     IndexName: this.indexName,
     KeyConditionExpression: 'active = :a AND commitId >= :c',
     ExpressionAttributeValues: {
       ':a': { S: 't' },
-      ':c': { S: commitId }
+      ':c': { S: commitId || '0' }
     }
   };
 
