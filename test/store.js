@@ -217,13 +217,6 @@ describe('when the tables are created', function () {
         .then(function (commits) {
           assert.deepEqual(commits, [
             {
-              commitId: '19700101000000002:00000000-0000-0000-0000-000000000000',
-              committedAt: 2,
-              aggregateId: '00000000-0000-0000-0000-000000000000',
-              version: 1,
-              events: [ 'five' ]
-            },
-            {
               commitId: '19700101000000003:11111111-1111-1111-1111-111111111111',
               committedAt: 3,
               aggregateId: '11111111-1111-1111-1111-111111111111',

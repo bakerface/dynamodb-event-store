@@ -174,7 +174,7 @@ EventStore.prototype.scan = function (commitId) {
   var params = {
     TableName: this.tableName,
     IndexName: this.indexName,
-    KeyConditionExpression: 'active = :a AND commitId >= :c',
+    KeyConditionExpression: 'active = :a AND commitId > :c',
     ExpressionAttributeValues: {
       ':a': { S: 't' },
       ':c': { S: commitId || '0' }
